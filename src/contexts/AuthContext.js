@@ -1,21 +1,44 @@
-import { createContext, useContext, useState } from "react";
-import { USERS } from "../data/mockData";
+import { createContext, useContext, useState, useEffect } from "react";
+import { loginAPI, logoutAPI, getMeAPI } from "../utils/api";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser]       = useState(null);
+  const [loading, setLoading] = useState(true);   // check stored token on mount
 
-  const login = (email, password) => {
-    const found = USERS.find(u => u.email === email && u.password === password);
-    if (found) { setUser(found); return true; }
-    return false;
+  // On app load – restore session from localStorage token
+  useEffect(() => {
+    const restoreSession = async () => {
+      const token = localStorage.getItem("token");
+      const stored = localStorage.getItem("user");
+      if (token && stored) {
+        try {
+          const { user: freshUser } = await getMeAPI();
+          setUser(freshUser);
+        } catch {
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+        }
+      }
+      setLoading(false);
+    };
+    restoreSession();
+  }, []);
+
+  const login = async (email, password) => {
+    const loggedInUser = await loginAPI(email, password);  // throws on error
+    setUser(loggedInUser);
+    return loggedInUser;
   };
 
-  const logout = () => setUser(null);
+  const logout = () => {
+    logoutAPI();
+    setUser(null);
+  };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
