@@ -1,164 +1,193 @@
-const BASE_URL = "http://localhost:3000/api";
+// ─────────────────────────────────────────────────────────────────────────────
+// src/utils/api.js
+// Copy this file to:  digigicol/src/utils/api.js
+// Create the folder:  digigicol/src/utils/
+// ─────────────────────────────────────────────────────────────────────────────
 
-// ── Helper ─────────────────────────────────────────────────────────────────────
-const getToken = () => localStorage.getItem("token");
+const BASE = "http://localhost:5000/api";
 
-const headers = (isFormData = false) => {
+// ── Token helpers ─────────────────────────────────────────────────────────────
+const getToken = ()       => localStorage.getItem("token");
+const setToken = (t)      => localStorage.setItem("token", t);
+const clearToken = ()     => { localStorage.removeItem("token"); localStorage.removeItem("user"); };
+
+const authHeaders = (formData = false) => {
   const h = { Authorization: `Bearer ${getToken()}` };
-  if (!isFormData) h["Content-Type"] = "application/json";
+  if (!formData) h["Content-Type"] = "application/json";
   return h;
 };
 
-const handleResponse = async (res) => {
+const handle = async (res) => {
   const data = await res.json();
   if (!res.ok) throw new Error(data.message || "Request failed");
   return data;
 };
 
-// ── AUTH ───────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────────────────────────────────────────
 export const loginAPI = async (email, password) => {
-  const res = await fetch(`${BASE_URL}/auth/login`, {
+  const res  = await fetch(`${BASE}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
-  const data = await handleResponse(res);
-  localStorage.setItem("token", data.token);         // store JWT
-  localStorage.setItem("user",  JSON.stringify(data.user));
+  const data = await handle(res);
+  setToken(data.token);
+  localStorage.setItem("user", JSON.stringify(data.user));
   return data.user;
 };
 
 export const getMeAPI = async () => {
-  const res = await fetch(`${BASE_URL}/auth/me`, { headers: headers() });
-  return handleResponse(res);
+  const res = await fetch(`${BASE}/auth/me`, { headers: authHeaders() });
+  return handle(res);
 };
 
-export const logoutAPI = () => {
-  localStorage.removeItem("token");
-  localStorage.removeItem("user");
-};
+export const logoutAPI = () => clearToken();
 
-// ── FORMS ──────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// FORMS
+// ─────────────────────────────────────────────────────────────────────────────
 export const getFormsAPI = async (params = {}) => {
-  const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${BASE_URL}/forms?${qs}`, { headers: headers() });
-  return handleResponse(res);
+  const qs  = new URLSearchParams(params).toString();
+  const res = await fetch(`${BASE}/forms?${qs}`, { headers: authHeaders() });
+  return handle(res);
 };
 
 export const getFormAPI = async (id) => {
-  const res = await fetch(`${BASE_URL}/forms/${id}`, { headers: headers() });
-  return handleResponse(res);
+  const res = await fetch(`${BASE}/forms/${id}`, { headers: authHeaders() });
+  return handle(res);
 };
 
-export const createFormAPI = async (formData) => {
-  const res = await fetch(`${BASE_URL}/forms`, {
-    method: "POST", headers: headers(),
-    body: JSON.stringify(formData),
+export const createFormAPI = async (body) => {
+  const res = await fetch(`${BASE}/forms`, {
+    method: "POST", headers: authHeaders(), body: JSON.stringify(body),
   });
-  return handleResponse(res);
+  return handle(res);
 };
 
-export const updateFormAPI = async (id, formData) => {
-  const res = await fetch(`${BASE_URL}/forms/${id}`, {
-    method: "PUT", headers: headers(),
-    body: JSON.stringify(formData),
+export const updateFormAPI = async (id, body) => {
+  const res = await fetch(`${BASE}/forms/${id}`, {
+    method: "PUT", headers: authHeaders(), body: JSON.stringify(body),
   });
-  return handleResponse(res);
+  return handle(res);
 };
 
 export const deleteFormAPI = async (id) => {
-  const res = await fetch(`${BASE_URL}/forms/${id}`, {
-    method: "DELETE", headers: headers(),
+  const res = await fetch(`${BASE}/forms/${id}`, {
+    method: "DELETE", headers: authHeaders(),
   });
-  return handleResponse(res);
+  return handle(res);
 };
 
-// ── APPLICATIONS ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// APPLICATIONS
+// ─────────────────────────────────────────────────────────────────────────────
 export const submitApplicationAPI = async (formTemplateId, formData, remarks, files) => {
   const body = new FormData();
   body.append("formTemplateId", formTemplateId);
   body.append("formData", JSON.stringify(formData));
   body.append("remarks", remarks || "");
-  files.forEach((file) => body.append("attachments", file));
+  (files || []).forEach(f => body.append("attachments", f));
 
-  const res = await fetch(`${BASE_URL}/applications`, {
+  const res = await fetch(`${BASE}/applications`, {
     method: "POST",
-    headers: headers(true),   // no Content-Type so browser sets multipart boundary
+    headers: { Authorization: `Bearer ${getToken()}` }, // NO Content-Type for multipart
     body,
   });
-  return handleResponse(res);
+  return handle(res);
 };
 
 export const getApplicationsAPI = async (params = {}) => {
-  const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${BASE_URL}/applications?${qs}`, { headers: headers() });
-  return handleResponse(res);
+  const qs  = new URLSearchParams(params).toString();
+  const res = await fetch(`${BASE}/applications?${qs}`, { headers: authHeaders() });
+  return handle(res);
 };
 
 export const getApplicationAPI = async (id) => {
-  const res = await fetch(`${BASE_URL}/applications/${id}`, { headers: headers() });
-  return handleResponse(res);
+  const res = await fetch(`${BASE}/applications/${id}`, { headers: authHeaders() });
+  return handle(res);
 };
 
 export const actionApplicationAPI = async (id, action, comment) => {
-  const res = await fetch(`${BASE_URL}/applications/${id}/action`, {
-    method: "PUT", headers: headers(),
+  const res = await fetch(`${BASE}/applications/${id}/action`, {
+    method: "PUT", headers: authHeaders(),
     body: JSON.stringify({ action, comment }),
   });
-  return handleResponse(res);
+  return handle(res);
 };
 
 export const getAnalyticsAPI = async () => {
-  const res = await fetch(`${BASE_URL}/applications/analytics`, { headers: headers() });
-  return handleResponse(res);
+  const res = await fetch(`${BASE}/applications/analytics`, { headers: authHeaders() });
+  return handle(res);
 };
 
-// ── NOTIFICATIONS ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────────
 export const getNotificationsAPI = async () => {
-  const res = await fetch(`${BASE_URL}/notifications`, { headers: headers() });
-  return handleResponse(res);
+  const res = await fetch(`${BASE}/notifications`, { headers: authHeaders() });
+  return handle(res);
+};
+
+export const getUnreadCountAPI = async () => {
+  const res = await fetch(`${BASE}/notifications/unread-count`, { headers: authHeaders() });
+  return handle(res);
 };
 
 export const markReadAPI = async (id) => {
-  const res = await fetch(`${BASE_URL}/notifications/${id}/read`, {
-    method: "PUT", headers: headers(),
+  const res = await fetch(`${BASE}/notifications/${id}/read`, {
+    method: "PUT", headers: authHeaders(),
   });
-  return handleResponse(res);
+  return handle(res);
 };
 
 export const markAllReadAPI = async () => {
-  const res = await fetch(`${BASE_URL}/notifications/read-all`, {
-    method: "PUT", headers: headers(),
+  const res = await fetch(`${BASE}/notifications/read-all`, {
+    method: "PUT", headers: authHeaders(),
   });
-  return handleResponse(res);
+  return handle(res);
 };
 
-// ── USERS (admin) ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// USERS (admin)
+// ─────────────────────────────────────────────────────────────────────────────
 export const getUsersAPI = async (params = {}) => {
-  const qs = new URLSearchParams(params).toString();
-  const res = await fetch(`${BASE_URL}/users?${qs}`, { headers: headers() });
-  return handleResponse(res);
+  const qs  = new URLSearchParams(params).toString();
+  const res = await fetch(`${BASE}/users?${qs}`, { headers: authHeaders() });
+  return handle(res);
 };
 
-export const createUserAPI = async (userData) => {
-  const res = await fetch(`${BASE_URL}/users`, {
-    method: "POST", headers: headers(),
-    body: JSON.stringify(userData),
+export const createUserAPI = async (body) => {
+  const res = await fetch(`${BASE}/users`, {
+    method: "POST", headers: authHeaders(), body: JSON.stringify(body),
   });
-  return handleResponse(res);
+  return handle(res);
 };
 
-export const updateUserAPI = async (id, userData) => {
-  const res = await fetch(`${BASE_URL}/users/${id}`, {
-    method: "PUT", headers: headers(),
-    body: JSON.stringify(userData),
+export const updateUserAPI = async (id, body) => {
+  const res = await fetch(`${BASE}/users/${id}`, {
+    method: "PUT", headers: authHeaders(), body: JSON.stringify(body),
   });
-  return handleResponse(res);
+  return handle(res);
 };
 
 export const deleteUserAPI = async (id) => {
-  const res = await fetch(`${BASE_URL}/users/${id}`, {
-    method: "DELETE", headers: headers(),
+  const res = await fetch(`${BASE}/users/${id}`, {
+    method: "DELETE", headers: authHeaders(),
   });
-  return handleResponse(res);
+  return handle(res);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DASHBOARD
+// ─────────────────────────────────────────────────────────────────────────────
+export const getStudentDashboardAPI = async () => {
+  const res = await fetch(`${BASE}/dashboard/student`, { headers: authHeaders() });
+  return handle(res);
+};
+
+export const getStaffDashboardAPI = async () => {
+  const res = await fetch(`${BASE}/dashboard/staff`, { headers: authHeaders() });
+  return handle(res);
 };
