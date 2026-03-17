@@ -5,6 +5,7 @@ const AppContext = createContext({
   applications: [],
   notifications: [],
   unreadCount: 0,
+  openFeedbackCount: 0,
   forms: [],
   loadingApps: false,
   loadingNotifs: false,
@@ -15,6 +16,7 @@ const AppContext = createContext({
   refetchApps: async () => {},
   refetchNotifs: async () => {},
   refetchForms: async () => {},
+  refetchFeedbackCount: async () => {},
   getPendingForRole: () => [],
   getPendingCountForRole: () => 0,
 });
@@ -41,8 +43,14 @@ export function AppProvider({ children }) {
   const [forms,         setForms]         = useState([]);
   const [loadingApps,   setLoadingApps]   = useState(false);
   const [loadingNotifs, setLoadingNotifs] = useState(false);
+  const [openFeedbackCount, setOpenFeedbackCount] = useState(0);
 
   const hasToken = () => !!localStorage.getItem("token");
+
+  // get current user role from localStorage
+  const getUserRole = () => {
+    try { return JSON.parse(localStorage.getItem("user"))?.role || ""; } catch { return ""; }
+  };
 
   const fetchForms = useCallback(async () => {
     if (!hasToken()) return;
@@ -74,6 +82,17 @@ export function AppProvider({ children }) {
     } catch (e) {}
   }, []);
 
+  // Fetch open feedback count (only for admins)
+  const fetchOpenFeedbackCount = useCallback(async () => {
+    if (!hasToken()) return;
+    const role = getUserRole();
+    if (!["college_admin","college_director"].includes(role)) return;
+    try {
+      const data = await apiCall("/feedback/open-count");
+      setOpenFeedbackCount(data.count || 0);
+    } catch (e) {}
+  }, []);
+
   // Load data on mount if already logged in
   useEffect(() => {
     if (hasToken()) {
@@ -81,16 +100,20 @@ export function AppProvider({ children }) {
       fetchApplications();
       fetchNotifications();
       fetchUnreadCount();
+      fetchOpenFeedbackCount();
     }
   }, []);
 
   // Poll every 30s to keep badge counts live
   useEffect(() => {
     const timer = setInterval(() => {
-      if (hasToken()) fetchUnreadCount();
+      if (hasToken()) {
+        fetchUnreadCount();
+        fetchOpenFeedbackCount();
+      }
     }, 30000);
     return () => clearInterval(timer);
-  }, [fetchUnreadCount]);
+  }, [fetchUnreadCount, fetchOpenFeedbackCount]);
 
   const submitApplication = async (formTemplate, formData, remarks, files = []) => {
     const body = new FormData();
@@ -144,11 +167,13 @@ export function AppProvider({ children }) {
     <AppContext.Provider value={{
       applications, notifications, unreadCount, forms,
       loadingApps, loadingNotifs,
+      openFeedbackCount,
       submitApplication, actionApplication,
       markNotificationRead, markAllRead,
       refetchApps: fetchApplications,
       refetchNotifs: fetchNotifications,
       refetchForms: fetchForms,
+      refetchFeedbackCount: fetchOpenFeedbackCount,
       getPendingForRole,
       getPendingCountForRole,
     }}>

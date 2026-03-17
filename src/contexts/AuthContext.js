@@ -1,23 +1,22 @@
 import { createContext, useContext, useState, useEffect } from "react";
 
 const AuthContext = createContext(null);
-
 const BASE = "http://localhost:5000/api";
 
 export function AuthProvider({ children }) {
   const [user,    setUser]    = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore session from localStorage on page load / refresh
+  // Restore session on page load / refresh
   useEffect(() => {
     const restore = async () => {
       const token = localStorage.getItem("token");
       if (!token) { setLoading(false); return; }
       try {
-        const res = await fetch(`${BASE}/auth/me`, {
+        const res  = await fetch(`${BASE}/auth/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok) throw new Error("Invalid token");
+        if (!res.ok) throw new Error("Token invalid");
         const data = await res.json();
         setUser(data.user);
       } catch {
@@ -30,6 +29,8 @@ export function AuthProvider({ children }) {
     restore();
   }, []);
 
+  // Standard login — used for demo quick-login ONLY
+  // Real login is done in LoginPage (2FA flow) which calls setUser directly
   const login = async (email, password) => {
     const res  = await fetch(`${BASE}/auth/login`, {
       method:  "POST",
@@ -38,10 +39,8 @@ export function AuthProvider({ children }) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || "Login failed");
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("user",  JSON.stringify(data.user));
-    setUser(data.user);
-    return data.user;
+    // This returns OTP flow info, not a token
+    return data;
   };
 
   const logout = () => {
@@ -50,19 +49,28 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // Called by LoginPage after OTP verification succeeds
+  const setLoggedInUser = (userData) => {
+    setUser(userData);
+  };
+
   if (loading) {
     return (
       <div style={{ display:"flex", alignItems:"center", justifyContent:"center",
         height:"100vh", flexDirection:"column", gap:16,
-        background:"#f5f2ed", color:"#8898aa" }}>
-        <div style={{ fontSize:42 }}>🎓</div>
-        <div style={{ fontSize:16, fontWeight:600 }}>Loading EduForms...</div>
+        background:"linear-gradient(135deg,#0d1b2a,#1a2f4a)", color:"rgba(255,255,255,0.6)" }}>
+        <div style={{ fontSize:48 }}>🎓</div>
+        <div style={{ fontSize:16, fontWeight:600, color:"white" }}>Loading EduForms...</div>
+        <div style={{ width:200, height:3, background:"rgba(255,255,255,0.1)", borderRadius:99, overflow:"hidden" }}>
+          <div style={{ width:"60%", height:"100%", background:"#e85d26", borderRadius:99,
+            animation:"none" }}/>
+        </div>
       </div>
     );
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, setLoggedInUser }}>
       {children}
     </AuthContext.Provider>
   );
