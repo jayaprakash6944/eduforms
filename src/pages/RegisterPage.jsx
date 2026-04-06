@@ -31,6 +31,8 @@ export default function RegisterPage({ preRole, onBack, onSuccess }) {
   const [dept,        setDept]        = useState("");
   const [year,        setYear]        = useState("");
   const [rollNo,      setRollNo]      = useState("");
+  const [phone,       setPhone]       = useState("");
+  const [course,      setCourse]      = useState("");
   const [designation, setDesignation] = useState("");
   const [employeeId,  setEmployeeId]  = useState("");
   const [showPass,    setShowPass]    = useState(false);
@@ -60,6 +62,8 @@ export default function RegisterPage({ preRole, onBack, onSuccess }) {
     if (pass !== confPass) return setError("Passwords do not match");
     if (needsDept && !dept) return setError("Please select your department");
     if (isStudent && !year) return setError("Please select your year");
+    if (isStudent && !rollNo.trim()) return setError("Roll number is required for students");
+    if (isStudent && !course.trim()) return setError("Course is required for students");
     if (isFaculty && !designation) return setError("Please select your designation");
 
     setLoading(true);
@@ -70,6 +74,8 @@ export default function RegisterPage({ preRole, onBack, onSuccess }) {
         body: JSON.stringify({
           name, email, password: pass, role, dept, year,
           rollNo: isStudent ? rollNo : employeeId,
+          phone,
+          course: isStudent ? course : "",
           designation: isFaculty || isHOD ? designation : "",
         }),
       });
@@ -109,9 +115,11 @@ export default function RegisterPage({ preRole, onBack, onSuccess }) {
             ["Name",        name],
             ["Email",       email],
             ["Department",  dept || "—"],
+            isStudent && course      ? ["Course",       course]      : null,
             isFaculty && designation ? ["Designation", designation] : null,
             isFaculty && employeeId  ? ["Employee ID", employeeId]  : null,
             isStudent && rollNo      ? ["Roll No",     rollNo]      : null,
+            phone                   ? ["Phone",        phone]       : null,
           ].filter(Boolean).map(([k,v]) => (
             <div key={k} style={{ display:"flex", justifyContent:"space-between",
               padding:"5px 0", borderBottom:"1px solid "+cur.border,
@@ -286,10 +294,42 @@ export default function RegisterPage({ preRole, onBack, onSuccess }) {
                 </div>
               </div>
               <div style={{ marginBottom:16 }}>
-                <label style={lbl}>Roll Number (optional)</label>
+                <label style={lbl}>Course <span style={{color:"#dc2626"}}>*</span></label>
+                <select value={course} onChange={e=>setCourse(e.target.value)}
+                  style={{...inp, cursor:"pointer"}}
+                  onFocus={focus} onBlur={blur}>
+                  <option value="">Select your course...</option>
+                  <option>B.Tech</option>
+                  <option>M.Tech</option>
+                  <option>BCA</option>
+                  <option>MCA</option>
+                  <option>B.Sc</option>
+                  <option>M.Sc</option>
+                  <option>MBA</option>
+                  <option>B.Com</option>
+                  <option>M.Com</option>
+                  <option>B.A</option>
+                  <option>M.A</option>
+                  <option>Diploma</option>
+                  <option>B.Pharmacy</option>
+                  <option>M.Pharmacy</option>
+                </select>
+                <div style={{fontSize:11,color:"#8898aa",marginTop:4}}>Required — used for form auto-fill</div>
+              </div>
+              <div style={{ marginBottom:16 }}>
+                <label style={lbl}>Roll Number <span style={{color:"#dc2626"}}>*</span></label>
                 <input value={rollNo} onChange={e=>setRollNo(e.target.value)}
                   placeholder="e.g. CS21B047" style={inp}
                   onFocus={focus} onBlur={blur}/>
+                <div style={{fontSize:11,color:"#8898aa",marginTop:4}}>Required — used for form auto-fill</div>
+              </div>
+              <div style={{ marginBottom:16 }}>
+                <label style={lbl}>Phone Number</label>
+                <input value={phone} onChange={e=>setPhone(e.target.value)}
+                  placeholder="e.g. 9876543210" style={inp}
+                  type="tel" maxLength={10}
+                  onFocus={focus} onBlur={blur}/>
+                <div style={{fontSize:11,color:"#8898aa",marginTop:4}}>Used for contact number auto-fill in forms</div>
               </div>
             </>
           )}

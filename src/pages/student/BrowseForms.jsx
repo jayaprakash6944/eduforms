@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { getFormsAPI, submitApplicationAPI } from "../../utils/api";
 import { useAuth } from "../../contexts/AuthContext";
+import PredictiveWidget from "../../components/PredictiveWidget";
 
 const STUDENT_CATEGORIES = ["All","Certificate","Leave","Placement","Fee","Hostel","Exam","Activity","Library"];
-const FACULTY_CATEGORIES = ["All","Leave","Academic","Admin","Financial","HR"];
+const FACULTY_CATEGORIES = ["All","Leave","Academic","Research","Admin","Professional"];
 
 // ── Reusable button — reads --accent from parent wrapper ──────────────────────
 const Btn = ({ onClick, children, variant, disabled, accent = "#e85d26" }) => (
@@ -78,23 +79,172 @@ function FileUploader({ files, setFiles, accentColor = "#e85d26" }) {
 
 // ── Form Wizard ───────────────────────────────────────────────────────────────
 function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFaculty = false }) {
+  const { user } = useAuth();
+
+  // ── Profile field mapping — maps form field names to user profile values ──
+  // ── PROFILE_MAP: every possible field name → user db value ──────────────
+  // Uses case-insensitive matching below so we cover all variations
+  const PROFILE_MAP = {
+    // ── NAME variations ──
+    "Student Name":           user?.name,
+    "Name":                   user?.name,
+    "Full Name":              user?.name,
+    "Applicant Name":         user?.name,
+    "Student's Name":         user?.name,
+    "Name of Student":        user?.name,
+    "Candidate Name":         user?.name,
+    "Faculty Name":           user?.name,
+    "Staff Name":             user?.name,
+    "Employee Name":          user?.name,
+
+    // ── ROLL NO / ID variations ──
+    "Roll Number":            user?.rollNo,
+    "Roll No":                user?.rollNo,
+    "Register Number":        user?.rollNo,
+    "Registration Number":    user?.rollNo,
+    "Hall Ticket Number":     user?.rollNo,
+    "Hall Ticket No":         user?.rollNo,
+    "ID Number":              user?.rollNo,
+    "ID No":                  user?.rollNo,
+    "Student ID":             user?.rollNo,
+    "Enrollment Number":      user?.rollNo,
+    "Exam Roll Number":       user?.rollNo,
+    "Employee ID":            user?.employeeId || user?.rollNo,
+    "Staff ID":               user?.employeeId || user?.rollNo,
+    "Employee No":            user?.employeeId || user?.rollNo,
+
+    // ── DEPARTMENT / BRANCH variations ──
+    "Branch / Department":    user?.dept,
+    "Department":             user?.dept,
+    "Branch":                 user?.dept,
+    "Course":                 user?.course || user?.dept,
+    "Course Name":            user?.course,
+    "Programme":              user?.course,
+    "Degree":                 user?.course,
+    "Degree Program":         user?.course,
+    "Course (B.Tech / M.Tech / etc.)": user?.course,
+
+    // ── YEAR variations ──
+    "Year":                   user?.year,
+    "Academic Year":          user?.year,
+    "Year of Study":          user?.year,
+    "Current Year":           user?.year,
+    "Class":                  user?.year,
+
+    // ── EMAIL variations ──
+    "Email":                  user?.email,
+    "Email ID":               user?.email,
+    "Email Address":          user?.email,
+    "Contact Email":          user?.email,
+    "Official Email":         user?.email,
+    "College Email":          user?.email,
+    "Student Email":          user?.email,
+    "E-mail":                 user?.email,
+
+    // ── PHONE variations ──
+    "Contact Number":         user?.phone,
+    "Phone Number":           user?.phone,
+    "Mobile Number":          user?.phone,
+    "Mobile No":              user?.phone,
+    "Phone":                  user?.phone,
+    "Contact No":             user?.phone,
+    "Phone No":               user?.phone,
+    "WhatsApp Number":        user?.phone,
+
+    // ── DESIGNATION (faculty) ──
+    "Designation":            user?.designation,
+    "Post":                   user?.designation,
+    "Position":               user?.designation,
+
+    // ── SEMESTER (calculated from year) ──
+    "Semester":               user?.year?.includes("1st") ? "I" :
+                              user?.year?.includes("2nd") ? "III" :
+                              user?.year?.includes("3rd") ? "V" :
+                              user?.year?.includes("4th") ? "VII" : "",
+    "Sem":                    user?.year?.includes("1st") ? "I" :
+                              user?.year?.includes("2nd") ? "III" :
+                              user?.year?.includes("3rd") ? "V" :
+                              user?.year?.includes("4th") ? "VII" : "",
+  };
+
+  // Fields that came from auto-fill (to show green highlight)
+  const [autoFilledFields, setAutoFilledFields] = useState([]);
+
+  // AI prefill from chat assistant
+  const aiPrefill = (() => {
+    try {
+      const stored = sessionStorage.getItem("ai_prefill");
+      if (!stored) return {};
+      const parsed = JSON.parse(stored);
+      if (parsed.formId === form._id || parsed.formName?.toLowerCase() === form.name?.toLowerCase()) {
+        sessionStorage.removeItem("ai_prefill");
+        return parsed.prefillData || {};
+      }
+      return {};
+    } catch { return {}; }
+  })();
+
   const [step,        setStep]        = useState(1);
-  const [formData,    setFormData]    = useState({});
+  const [formData,    setFormData]    = useState(aiPrefill);
   const [remarks,     setRemarks]     = useState("");
   const [files,       setFiles]       = useState([]);
   const [submitting,  setSubmitting]  = useState(false);
   const [submittedId, setSubmittedId] = useState(null);
   const [error,       setError]       = useState("");
+  const [aiAssisted,  setAiAssisted]  = useState(Object.keys(aiPrefill).length > 0);
+  const [autoFillDone, setAutoFillDone] = useState(false);
+
+  // ── AUTO-FILL FUNCTION ────────────────────────────────────────────────────
+  // Case-insensitive lookup — handles "CONTACT NUMBER", "Contact Number", "contact number" all the same
+  const getProfileValue = (fieldName) => {
+    // Exact match first
+    if (PROFILE_MAP[fieldName] !== undefined) return PROFILE_MAP[fieldName];
+    // Case-insensitive match
+    const lower = fieldName.toLowerCase().trim();
+    const key = Object.keys(PROFILE_MAP).find(k => k.toLowerCase().trim() === lower);
+    if (key) return PROFILE_MAP[key];
+    // Partial match — e.g. "Phone" matches "Phone Number"
+    const partial = Object.keys(PROFILE_MAP).find(k =>
+      lower.includes(k.toLowerCase().trim()) || k.toLowerCase().trim().includes(lower)
+    );
+    return partial ? PROFILE_MAP[partial] : undefined;
+  };
+
+  const handleAutoFill = () => {
+    const filled     = {};
+    const filledKeys = [];
+    (form.fields || []).forEach(field => {
+      const val = getProfileValue(field);
+      if (val && String(val).trim()) {
+        filled[field] = val;
+        filledKeys.push(field);
+      }
+    });
+    setFormData(prev => ({ ...prev, ...filled }));
+    setAutoFilledFields(filledKeys);
+    setAutoFillDone(true);
+    setFieldErrors(prev => {
+      const n = { ...prev };
+      filledKeys.forEach(k => delete n[k]);
+      return n;
+    });
+  };
+
+  // Count fillable fields
+  const autoFillCount = (form.fields || []).filter(f => {
+    const v = getProfileValue(f);
+    return v && String(v).trim();
+  }).length;
 
   // ── VALIDATION STATE ──────────────────────────────────────────────────────
-  const [fieldErrors, setFieldErrors] = useState({}); // { fieldName: true }
+  const [fieldErrors, setFieldErrors] = useState({});
   const [showErrors,  setShowErrors]  = useState(false);
 
   const requiredFields = form.fields || [];
 
-  // Check which required fields are empty
   const getEmptyFields = () =>
     requiredFields.filter(f => !formData[f] || !formData[f].trim());
+
 
   // ── STEP 1 → STEP 2: Validate before proceeding ───────────────────────────
   const handleContinue = () => {
@@ -222,7 +372,73 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
           {/* ── STEP 1: Fill form ─────────────────────────────────────── */}
           {step===1 && (
             <div>
-              <h3 style={{fontSize:15,fontWeight:700,marginBottom:6}}>Fill Application Details</h3>
+              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14}}>
+                <h3 style={{fontSize:15,fontWeight:700,margin:0}}>Fill Application Details</h3>
+
+                {/* ── AUTO-FILL BUTTON ── */}
+                {autoFillCount > 0 && !autoFillDone && (
+                  <button
+                    type="button"
+                    onClick={handleAutoFill}
+                    style={{
+                      display:"flex", alignItems:"center", gap:7,
+                      padding:"8px 16px", borderRadius:99,
+                      background:`linear-gradient(135deg,${accentColor},${accentColor}cc)`,
+                      color:"white", border:"none", cursor:"pointer",
+                      fontSize:12, fontWeight:800,
+                      boxShadow:`0 3px 12px ${accentColor}44`,
+                      transition:"all 0.2s",
+                    }}
+                    onMouseOver={e=>e.currentTarget.style.transform="scale(1.04)"}
+                    onMouseOut={e=>e.currentTarget.style.transform="scale(1)"}
+                  >
+                    ⚡ Auto-Fill ({autoFillCount} fields)
+                  </button>
+                )}
+
+                {/* Already filled badge */}
+                {autoFillDone && (
+                  <div style={{display:"flex", alignItems:"center", gap:6,
+                    background:"#f0fdf4", border:"1.5px solid #bbf7d0",
+                    borderRadius:99, padding:"5px 12px"}}>
+                    <span style={{fontSize:13}}>✅</span>
+                    <span style={{fontSize:12, fontWeight:700, color:"#059669"}}>
+                      {autoFilledFields.length} fields auto-filled
+                    </span>
+                    <button type="button" onClick={()=>{
+                      setAutoFillDone(false);
+                      setAutoFilledFields([]);
+                      setFormData({});
+                    }}
+                      style={{background:"none",border:"none",cursor:"pointer",
+                        color:"#8898aa",fontSize:11,fontWeight:600,padding:0,
+                        marginLeft:4,textDecoration:"underline"}}>
+                      Clear
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Auto-fill info banner */}
+              {autoFillDone && (
+                <div style={{background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",
+                  border:"1.5px solid #86efac", borderRadius:12,
+                  padding:"10px 14px", marginBottom:16,
+                  display:"flex", alignItems:"flex-start", gap:10}}>
+                  <span style={{fontSize:18}}>✅</span>
+                  <div>
+                    <div style={{fontWeight:800, fontSize:13, color:"#166534", marginBottom:3}}>
+                      Profile data auto-filled!
+                    </div>
+                    <div style={{fontSize:12, color:"#15803d"}}>
+                      <strong style={{color:"#059669"}}>{autoFilledFields.join(", ")}</strong> — filled from your profile.
+                      {requiredFields.length - autoFilledFields.length > 0
+                        ? ` Please fill the remaining ${requiredFields.length - autoFilledFields.length} field(s) manually.`
+                        : " All fields are filled — ready to continue!"}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Global validation banner */}
               {showErrors && Object.keys(fieldErrors).length > 0 && (
@@ -242,13 +458,22 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
 
               <div style={{display:"flex",flexDirection:"column",gap:14,marginTop:14}}>
                 {requiredFields.map(field => {
-                  const hasError = fieldErrors[field];
+                  const hasError     = fieldErrors[field];
+                  const isAutoFilled = autoFilledFields.includes(field) && !!formData[field];
                   return (
                     <div key={field}>
                       <label style={{fontSize:11,fontWeight:700,display:"block",marginBottom:5,
                         textTransform:"uppercase",letterSpacing:0.3,
-                        color:hasError?"#dc2626":"#4a5568"}}>
+                        color:hasError?"#dc2626":isAutoFilled?"#059669":"#4a5568"}}>
                         {field} <span style={{color:accentColor}}>*</span>
+                        {isAutoFilled && (
+                          <span style={{marginLeft:8, fontSize:10, fontWeight:700,
+                            color:"#059669", background:"#f0fdf4",
+                            padding:"1px 7px", borderRadius:99,
+                            textTransform:"none", letterSpacing:0}}>
+                            ⚡ auto-filled
+                          </span>
+                        )}
                       </label>
                       <input
                         value={formData[field]||""}
@@ -258,10 +483,14 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
                           fontSize:13,borderRadius:8,outline:"none",transition:"border-color 0.15s",
                           border: hasError
                             ? "2px solid #dc2626"
-                            : "1.5px solid #e2e8f0",
-                          background: hasError ? "#fef2f2" : "white"}}
-                        onFocus={e  => { if(!hasError) e.target.style.borderColor=accentColor; }}
-                        onBlur={e   => { if(!hasError) e.target.style.borderColor="#e2e8f0"; }}
+                            : isAutoFilled
+                              ? "1.5px solid #059669"
+                              : "1.5px solid #e2e8f0",
+                          background: hasError    ? "#fef2f2"
+                                    : isAutoFilled ? "#f0fdf4"
+                                    : "white"}}
+                        onFocus={e  => { if(!hasError) e.target.style.borderColor=isAutoFilled?"#059669":accentColor; }}
+                        onBlur={e   => { if(!hasError) e.target.style.borderColor=isAutoFilled?"#059669":"#e2e8f0"; }}
                       />
                       {hasError && (
                         <div style={{fontSize:11,color:"#dc2626",marginTop:4,fontWeight:600}}>
@@ -414,11 +643,17 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
               </div>
             ))}
           </div>
-          <div style={{background:"#fef3c7",borderRadius:14,padding:18}}>
-            <div style={{fontSize:18,marginBottom:6}}>⏱️</div>
-            <div style={{fontSize:12,fontWeight:700,color:"#92400e"}}>Est. Processing</div>
-            <div style={{fontSize:20,fontWeight:800,color:"#78350f",marginTop:2}}>{form.time}</div>
-          </div>
+          {/* AI prefill banner */}
+          {aiAssisted && (
+            <div style={{background:"linear-gradient(135deg,#eff6ff,#dbeafe)",border:"1.5px solid #93c5fd",borderRadius:12,padding:"12px 14px"}}>
+              <div style={{fontSize:11,fontWeight:800,color:"#1d4ed8",textTransform:"uppercase",letterSpacing:0.4,marginBottom:4}}>🤖 AI Pre-filled</div>
+              <div style={{fontSize:12,color:"#1e40af",lineHeight:1.5}}>Fields were auto-filled by EduBot. Please review and adjust.</div>
+              <button type="button" onClick={()=>setAiAssisted(false)} style={{marginTop:6,background:"none",border:"none",color:"#2563eb",fontSize:11,cursor:"pointer",fontWeight:600,padding:0,textDecoration:"underline"}}>Dismiss</button>
+            </div>
+          )}
+
+          {/* AI Predictive widget */}
+          <PredictiveWidget form={form}/>
 
           {/* Required fields checklist — live feedback */}
           {step===1 && requiredFields.length > 0 && (
@@ -483,7 +718,32 @@ export default function BrowseForms({ onNavigate = () => {} }) {
       setLoading(true);
       try {
         const data = await getFormsAPI();
-        setForms(Array.isArray(data) ? data : []);
+        const list  = Array.isArray(data) ? data : [];
+        setForms(list);
+
+        // ── Auto-open form if coming from AI assistant ──────────────────────
+        const stored = sessionStorage.getItem("ai_prefill");
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            const targetName = parsed.formName?.toLowerCase();
+            if (targetName) {
+              // Find best matching form
+              const match = list.find(f =>
+                f.name?.toLowerCase() === targetName ||                          // exact
+                f.name?.toLowerCase().includes(targetName) ||                   // form name contains target
+                targetName.includes(f.name?.toLowerCase().split(" ")[0])        // target contains first word
+              );
+              if (match) {
+                // Don't remove from sessionStorage yet — FormWizard will read it
+                setSelected(match);
+              } else {
+                // No exact form found — set search so user can see related forms
+                setSearch(parsed.formName || "");
+              }
+            }
+          } catch { /* ignore parse errors */ }
+        }
       } catch (err) {
         console.error("Forms fetch error:", err.message);
       } finally {

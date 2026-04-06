@@ -69,15 +69,6 @@ const Banner = ({ msg, type }) => !msg ? null : (
   </div>
 );
 
-const DevHint = ({ otp }) => !otp ? null : (
-  <div style={{ background:"#fffbeb", border:"1.5px dashed #f59e0b", borderRadius:10,
-    padding:"10px 14px", marginBottom:16, fontSize:12 }}>
-    <div style={{ fontWeight:700, color:"#92400e", marginBottom:4 }}>🛠 Dev Mode — OTP</div>
-    <div style={{ fontFamily:"monospace", fontSize:24, fontWeight:900, letterSpacing:8,
-      color:"#e85d26", textAlign:"center", padding:"6px 0" }}>{otp}</div>
-  </div>
-);
-
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
@@ -87,10 +78,9 @@ export default function LoginPage({ role: initialRole, onBack, onRegister }) {
 
   // screens: "login" | "otp" | "forgot" | "reset-otp" | "new-pass" | "done"
   const [screen,     setScreen]     = useState("login");
-  const [email,      setEmail]      = useState(portal.demo?.email || "");
+  const [email,      setEmail]      = useState("");
   const [password,   setPassword]   = useState("");
   const [otp,        setOtp]        = useState("");
-  const [devOtp,     setDevOtp]     = useState("");
   const [newPass,    setNewPass]    = useState("");
   const [confPass,   setConfPass]   = useState("");
   const [resetToken, setResetToken] = useState("");
@@ -121,7 +111,6 @@ export default function LoginPage({ role: initialRole, onBack, onRegister }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
-      setDevOtp(data.devOtp || "");
       setOtp("");
       setScreen("otp");
       setResendCd(30);
@@ -165,7 +154,6 @@ export default function LoginPage({ role: initialRole, onBack, onRegister }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
-      setDevOtp(data.devOtp || "");
       setOtp("");
       setSuccess("New OTP sent!");
       setResendCd(30);
@@ -188,7 +176,6 @@ export default function LoginPage({ role: initialRole, onBack, onRegister }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
-      setDevOtp(data.devOtp || "");
       setOtp("");
       setScreen("reset-otp");
       setResendCd(30);
@@ -312,27 +299,6 @@ export default function LoginPage({ role: initialRole, onBack, onRegister }) {
         </div>
         {submitBtn(`Sign In as ${portal.label} →`)}
 
-        {/* Demo fill */}
-        {portal.demo && (
-          <div style={{ marginTop:18, padding:"12px 16px", background:portal.bg,
-            borderRadius:12, border:`1px solid ${portal.border}`, textAlign:"center" }}>
-            <div style={{ fontSize:11, fontWeight:700, color:portal.color,
-              textTransform:"uppercase", letterSpacing:0.6, marginBottom:8 }}>
-              Quick Demo Fill
-            </div>
-            <button type="button"
-              onClick={() => { setEmail(portal.demo.email); setPassword(portal.demo.pass); }}
-              style={{ padding:"7px 18px", borderRadius:8, border:`1.5px solid ${portal.color}`,
-                background:"white", color:portal.color, fontSize:12, fontWeight:700,
-                cursor:"pointer", transition:"all 0.15s" }}
-              onMouseOver={e=>{e.currentTarget.style.background=portal.color;e.currentTarget.style.color="white";}}
-              onMouseOut={e=>{e.currentTarget.style.background="white";e.currentTarget.style.color=portal.color;}}>
-              Fill Demo Credentials
-            </button>
-            <div style={{ fontSize:11, color:"#8898aa", marginTop:6 }}>{portal.demo.email}</div>
-          </div>
-        )}
-
         {/* Register link */}
         {portal.canRegister && (
           <div style={{ textAlign:"center", marginTop:18, fontSize:13, color:"#8898aa" }}>
@@ -363,7 +329,6 @@ export default function LoginPage({ role: initialRole, onBack, onRegister }) {
         </div>
         <Banner msg={error} type="error"/>
         <Banner msg={success} type="success"/>
-        <DevHint otp={devOtp}/>
         <OTPBoxes value={otp} onChange={setOtp}/>
         {submitBtn("Verify & Sign In ✓")}
         <div style={{ textAlign:"center", marginTop:16 }}>
@@ -423,7 +388,6 @@ export default function LoginPage({ role: initialRole, onBack, onRegister }) {
         </div>
         <Banner msg={error} type="error"/>
         <Banner msg={success} type="success"/>
-        <DevHint otp={devOtp}/>
         <OTPBoxes value={otp} onChange={setOtp}/>
         {submitBtn("Verify Code →")}
         <div style={{ textAlign:"center", marginTop:16 }}>

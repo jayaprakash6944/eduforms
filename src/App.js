@@ -10,10 +10,11 @@ import LoginPage   from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import Sidebar     from "./components/Sidebar";
 import Router      from "./pages/Router";
+import AIAssistant from "./components/AIAssistant";
 
 function AppShell() {
   const { user, logout } = useAuth();
-  const { unreadCount, getPendingCountForRole, openFeedbackCount, refetchApps, refetchNotifs, refetchForms } = useApp();
+  const { unreadCount, getPendingCountForRole, openFeedbackCount, forms, refetchApps, refetchNotifs, refetchForms } = useApp();
 
   // Pre-app screen: "portal" | "login" | "register"
   const [preScreen,    setPreScreen]    = useState("portal");
@@ -32,6 +33,20 @@ function AppShell() {
   // ── Logged in → full app ──────────────────────────────────────────────────
   if (user) {
     const pendingCount = getPendingCountForRole(user.role);
+    const canUseAI = ["student","faculty"].includes(user.role);
+
+    const handleAIFormNav = (form, prefillData, formNameHint) => {
+      setCurrentPage("browse-forms");
+      // Store AI prefill data in sessionStorage for BrowseForms to pick up
+      if (prefillData || formNameHint) {
+        sessionStorage.setItem("ai_prefill", JSON.stringify({
+          formId:      form?._id || null,
+          formName:    form?.name || formNameHint || null,
+          prefillData: prefillData || {},
+        }));
+      }
+    };
+
     return (
       <div style={{ display:"flex", minHeight:"100vh", background:"#f5f2ed" }}>
         <Sidebar
@@ -46,6 +61,12 @@ function AppShell() {
         <main style={{ marginLeft:240, flex:1, minHeight:"100vh", overflowY:"auto" }}>
           <Router user={user} currentPage={currentPage} onNavigate={setCurrentPage} />
         </main>
+        {canUseAI && (
+          <AIAssistant
+            forms={forms}
+            onNavigateToForm={handleAIFormNav}
+          />
+        )}
       </div>
     );
   }
