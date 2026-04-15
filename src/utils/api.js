@@ -36,11 +36,12 @@ export const getFormsAPI = async (params = {}) => {
 export const getFormAPI = (id) => apiFetch("/forms/" + id);
 
 // APPLICATIONS
-export const submitApplicationAPI = async (formTemplateId, formData, remarks, files) => {
+export const submitApplicationAPI = async (formTemplateId, formData, remarks, files, priority = "medium") => {
   const body = new FormData();
   body.append("formTemplateId", formTemplateId);
   body.append("formData", JSON.stringify(formData || {}));
   body.append("remarks",  remarks || "");
+  body.append("priority", priority);
   (files || []).forEach(f => body.append("attachments", f));
   const token = getToken();
   const res   = await fetch(BASE + "/applications", {

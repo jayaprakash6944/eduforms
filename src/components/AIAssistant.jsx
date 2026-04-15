@@ -62,7 +62,7 @@ function TypingDots() {
 }
 
 // ── Message bubble ────────────────────────────────────────────────────────────
-function Bubble({ msg, onApplyForm }) {
+function Bubble({ msg, onApplyForm, onSelectOption }) {
   const isUser = msg.role === "user";
   return (
     <div style={{ display:"flex", justifyContent:isUser?"flex-end":"flex-start",
@@ -83,6 +83,30 @@ function Bubble({ msg, onApplyForm }) {
         }}>
           {msg.content}
         </div>
+
+        {/* Options card — when bot asks clarifying question */}
+        {msg.options && msg.options.length > 0 && (
+          <div style={{ width:"100%", marginTop:4 }}>
+            {msg.options.map((opt, i) => (
+              <div key={i} onClick={() => onSelectOption(opt.label)}
+                style={{ background:"white", border:"1.5px solid #f0ebe3",
+                  borderRadius:10, padding:"10px 14px", marginBottom:6,
+                  cursor:"pointer", transition:"all 0.15s",
+                  display:"flex", alignItems:"flex-start", gap:10 }}
+                onMouseOver={e=>{e.currentTarget.style.borderColor=ACCENT;e.currentTarget.style.background="#fff5f0";}}
+                onMouseOut={e=>{e.currentTarget.style.borderColor="#f0ebe3";e.currentTarget.style.background="white";}}>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:700, color:"#0d1b2a" }}>
+                    {opt.label}
+                  </div>
+                  <div style={{ fontSize:11, color:"#8898aa", marginTop:2, lineHeight:1.4 }}>
+                    {opt.desc}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Suggested form card */}
         {msg.suggestedForm && (
@@ -125,70 +149,11 @@ function Bubble({ msg, onApplyForm }) {
 
 // ── Quick prompts ─────────────────────────────────────────────────────────────
 const QUICK = [
-  
-  "I need leave application",
-  "I want on duty request",
-  "I need medical leave certificate",
-  "Certificate Request Form",
-
-  "I want internship permission",
+  "I need leave for 2 days",
   "I want internship NOC",
-  "I want placement registration",
-  "I want industrial visit form",
-
   "Need bonafide certificate",
-  "Need transfer certificate",
-  "Need character certificate",
-  "I want ID card replacement",
-  "I want bus pass application",
-  "I want scholarship application",
-
-  "I want fee payment request",
-  "I want course registration",
-
-  "I want hostel admission",
-  "I need hostel leave request",
-
-  "I want to participate in event",
-  "I want workshop registration",
-  "I want club activity form",
-  "I need research lab access",
-
-  "I want library membership",
-  "I want book issue request",
-
   "Apply for revaluation",
-  "Apply for supplementary exam",
-  "I want exam registration",
-
-  "I want casual leave",
-  "I want medical leave (faculty)",
-  "I want on duty request (faculty)",
-
-  "I want to submit internal marks",
-  "I want to submit attendance",
-  "I want to upload course plan",
-  "I want project evaluation form",
-  "I want guest lecture arrangement",
-
-  "I want to submit research proposal",
-
-  "I want equipment request",
-  "I want lab resource request",
-  "I want travel allowance claim",
-  "I want reimbursement",
-
-  "I want workshop/FDP permission",
-  "I want conference participation",
-
-  "I want mark correction",
-  "I want hall ticket",
-  "I want duplicate mark memo",
-  "I want transcript",
-  "I want consolidated marks memo",
-  "I want degree certificate"
-
-  
+  "Request transcript",
 ];
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -237,6 +202,7 @@ export default function AIAssistant({ forms = [], onNavigateToForm }) {
         content:       result.message || "I found something for you!",
         suggestedForm: result.suggestedForm || null,
         fillData:      result.fillData      || null,
+        options:       result.options       || null,
         id:            Date.now(),
       }]);
     } catch (err) {
@@ -253,23 +219,30 @@ export default function AIAssistant({ forms = [], onNavigateToForm }) {
   };
 
   const handleApplyForm = (formName, fillData) => {
-    const form = forms.find(f =>
-      f.name?.toLowerCase().includes(formName?.toLowerCase().split(" ")[0]) ||
-      formName?.toLowerCase().includes(f.name?.toLowerCase().split(" ")[0])
-    );
+    // Better matching — try multiple strategies
+    const nameLower = (formName || "").toLowerCase();
+    const form = forms.find(f => f.name?.toLowerCase() === nameLower)
+      || forms.find(f => f.name?.toLowerCase().includes(nameLower))
+      || forms.find(f => nameLower.includes(f.name?.toLowerCase()))
+      || forms.find(f => {
+          const words = nameLower.split(" ").filter(w => w.length > 3);
+          return words.some(w => f.name?.toLowerCase().includes(w));
+        });
 
-    // Save prefill + user data to sessionStorage
     const prefillData = {
-      ...(user?.name     ? { "Student Name": user.name }     : {}),
-      ...(user?.rollNo   ? { "Roll Number":  user.rollNo }   : {}),
-      ...(user?.dept     ? { "Branch / Department": user.dept, "Department": user.dept } : {}),
-      ...(user?.year     ? { "Year": user.year }             : {}),
-      ...(fillData       ? fillData                          : {}),
+      ...(user?.name   ? { "Student Name": user.name, "Name": user.name, "Full Name": user.name }  : {}),
+      ...(user?.rollNo ? { "Roll Number": user.rollNo, "ID Number": user.rollNo, "Register Number": user.rollNo } : {}),
+      ...(user?.dept   ? { "Branch": user.dept, "Department": user.dept, "Branch / Department": user.dept } : {}),
+      ...(user?.year   ? { "Year": user.year } : {}),
+      ...(user?.email  ? { "Email": user.email, "Email Address": user.email, "Email ID": user.email } : {}),
+      ...(user?.phone  ? { "Contact Number": user.phone, "Phone Number": user.phone, "Mobile Number": user.phone } : {}),
+      ...(user?.course ? { "Course": user.course, "Programme": user.course } : {}),
+      ...(fillData || {}),
     };
 
     sessionStorage.setItem("ai_prefill", JSON.stringify({
-      formId:      form?._id     || null,
-      formName:    form?.name    || formName,
+      formId:      form?._id  || null,
+      formName:    form?.name || formName,
       prefillData,
     }));
 
@@ -342,7 +315,7 @@ export default function AIAssistant({ forms = [], onNavigateToForm }) {
         <div style={{ flex:1, overflowY:"auto", padding:"14px 12px 8px",
           minHeight:180, maxHeight:360 }}>
           {messages.map(msg => (
-            <Bubble key={msg.id} msg={msg} onApplyForm={handleApplyForm}/>
+            <Bubble key={msg.id} msg={msg} onApplyForm={handleApplyForm} onSelectOption={(opt) => handleSend(opt)}/>
           ))}
           {loading && <TypingDots/>}
           <div ref={bottomRef}/>

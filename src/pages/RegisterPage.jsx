@@ -37,11 +37,15 @@ export default function RegisterPage({ preRole, onBack, onSuccess }) {
   const [employeeId,  setEmployeeId]  = useState("");
   const [showPass,    setShowPass]    = useState(false);
 
-  const isStudent = role === "student";
-  const isFaculty = role === "faculty";
-  const isMentor  = role === "mentor";
-  const isHOD     = role === "hod";
-  const needsDept = isStudent || isFaculty || isMentor || isHOD;
+  const isStudent   = role === "student";
+  const isFaculty   = role === "faculty";
+  const isMentor    = role === "mentor";
+  const isHOD       = role === "hod";
+  const isExam      = role === "exam_branch";
+  const isAdmin     = role === "college_admin";
+  const isPlacement = role === "placement_director";
+  const isDirector  = role === "college_director";
+  const needsDept   = isStudent || isFaculty || isMentor || isHOD || isExam;
 
   const cur = PORTALS.find(p => p.role === role) || portal;
 
@@ -350,6 +354,45 @@ export default function RegisterPage({ preRole, onBack, onSuccess }) {
                 <input value={employeeId} onChange={e=>setEmployeeId(e.target.value)}
                   placeholder={isHOD ? "e.g. HOD-CS-001" : "e.g. MNT-CS-001"}
                   style={inp} onFocus={focus} onBlur={blur}/>
+              </div>
+            </>
+          )}
+
+          {/* ── Exam Branch fields ── */}
+          {isExam && (
+            <>
+              <div style={{ marginBottom:16 }}>
+                <label style={lbl}>Department *</label>
+                <select value={dept} onChange={e=>setDept(e.target.value)}
+                  style={{...inp, cursor:"pointer"}}>
+                  <option value="">Select department...</option>
+                  {DEPTS.map(d => <option key={d}>{d}</option>)}
+                </select>
+              </div>
+              <div style={{ marginBottom:16 }}>
+                <label style={lbl}>Employee ID (optional)</label>
+                <input value={employeeId} onChange={e=>setEmployeeId(e.target.value)}
+                  placeholder="e.g. EXM-001"
+                  style={inp} onFocus={focus} onBlur={blur}/>
+              </div>
+            </>
+          )}
+
+          {/* ── Admin / Director / Placement fields ── */}
+          {(isAdmin || isPlacement || isDirector) && (
+            <>
+              <div style={{ marginBottom:16 }}>
+                <label style={lbl}>Employee ID (optional)</label>
+                <input value={employeeId} onChange={e=>setEmployeeId(e.target.value)}
+                  placeholder={isAdmin?"e.g. ADM-001":isPlacement?"e.g. PLD-001":"e.g. DIR-001"}
+                  style={inp} onFocus={focus} onBlur={blur}/>
+              </div>
+              <div style={{ marginBottom:16 }}>
+                <label style={lbl}>Phone Number</label>
+                <input value={phone} onChange={e=>setPhone(e.target.value)}
+                  placeholder="e.g. 9876543210" style={inp}
+                  type="tel" maxLength={10}
+                  onFocus={focus} onBlur={blur}/>
               </div>
             </>
           )}

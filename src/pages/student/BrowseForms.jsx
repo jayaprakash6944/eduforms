@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { getFormsAPI, submitApplicationAPI } from "../../utils/api";
 import { useAuth } from "../../contexts/AuthContext";
 import PredictiveWidget from "../../components/PredictiveWidget";
+import VoiceFormFill   from "../../components/VoiceFormFill";
 
 const STUDENT_CATEGORIES = ["All","Certificate","Leave","Placement","Fee","Hostel","Exam","Activity","Library"];
 const FACULTY_CATEGORIES = ["All","Leave","Academic","Research","Admin","Professional"];
@@ -175,8 +176,14 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
     try {
       const stored = sessionStorage.getItem("ai_prefill");
       if (!stored) return {};
-      const parsed = JSON.parse(stored);
-      if (parsed.formId === form._id || parsed.formName?.toLowerCase() === form.name?.toLowerCase()) {
+      const parsed   = JSON.parse(stored);
+      const formNameMatch =
+        parsed.formId === form._id ||
+        parsed.formName?.toLowerCase() === form.name?.toLowerCase() ||
+        form.name?.toLowerCase().includes(parsed.formName?.toLowerCase()) ||
+        parsed.formName?.toLowerCase().includes(form.name?.toLowerCase()) ||
+        parsed.formName?.toLowerCase().includes(form.name?.toLowerCase().split(" ")[0]);
+      if (formNameMatch) {
         sessionStorage.removeItem("ai_prefill");
         return parsed.prefillData || {};
       }
@@ -191,35 +198,57 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
   const [submitting,  setSubmitting]  = useState(false);
   const [submittedId, setSubmittedId] = useState(null);
   const [error,       setError]       = useState("");
-  const [aiAssisted,  setAiAssisted]  = useState(Object.keys(aiPrefill).length > 0);
+  const [aiAssisted,   setAiAssisted]   = useState(Object.keys(aiPrefill).length > 0);
+  const [priority,     setPriority]     = useState("medium");
   const [autoFillDone, setAutoFillDone] = useState(false);
+  const [voiceData,    setVoiceData]    = useState({}); // stores voice-extracted fields
+  const [voiceFields,  setVoiceFields]  = useState([]); // field names filled by voice
 
-  // ── AUTO-FILL FUNCTION ────────────────────────────────────────────────────
-  // Case-insensitive lookup — handles "CONTACT NUMBER", "Contact Number", "contact number" all the same
+  // ── AUTO-FILL FUNCTION — merges DB profile data + voice data ─────────────
+  // EXACT match only — no partial. "Subject Name" must NOT fill from "Name"
   const getProfileValue = (fieldName) => {
-    // Exact match first
+    // 1. Exact match (case-sensitive)
     if (PROFILE_MAP[fieldName] !== undefined) return PROFILE_MAP[fieldName];
-    // Case-insensitive match
+    // 2. Case-insensitive exact match only
     const lower = fieldName.toLowerCase().trim();
-    const key = Object.keys(PROFILE_MAP).find(k => k.toLowerCase().trim() === lower);
+    const key   = Object.keys(PROFILE_MAP).find(k => k.toLowerCase().trim() === lower);
     if (key) return PROFILE_MAP[key];
-    // Partial match — e.g. "Phone" matches "Phone Number"
-    const partial = Object.keys(PROFILE_MAP).find(k =>
-      lower.includes(k.toLowerCase().trim()) || k.toLowerCase().trim().includes(lower)
-    );
-    return partial ? PROFILE_MAP[partial] : undefined;
+    // NO partial match — stops "Subject Name" being filled with user name
+    return undefined;
+  };
+
+  // Find voice value for a field (case-insensitive match)
+  const getVoiceValue = (fieldName) => {
+    const lower = fieldName.toLowerCase().trim();
+    // 1. Exact match (case-sensitive)
+    if (voiceData[fieldName]) return voiceData[fieldName];
+    // 2. Case-insensitive exact match only
+    const key = Object.keys(voiceData).find(k => k.toLowerCase().trim() === lower);
+    if (key) return voiceData[key];
+    // NO partial match
+    return undefined;
   };
 
   const handleAutoFill = () => {
     const filled     = {};
     const filledKeys = [];
+
     (form.fields || []).forEach(field => {
-      const val = getProfileValue(field);
-      if (val && String(val).trim()) {
-        filled[field] = val;
+      // Priority 1: DB profile data (name, roll, email, branch, phone)
+      const profileVal = getProfileValue(field);
+      if (profileVal && String(profileVal).trim()) {
+        filled[field] = profileVal;
+        filledKeys.push(field);
+        return;
+      }
+      // Priority 2: Voice-extracted data (reason, dates, subject etc.)
+      const voiceVal = getVoiceValue(field);
+      if (voiceVal && String(voiceVal).trim()) {
+        filled[field] = voiceVal;
         filledKeys.push(field);
       }
     });
+
     setFormData(prev => ({ ...prev, ...filled }));
     setAutoFilledFields(filledKeys);
     setAutoFillDone(true);
@@ -230,9 +259,9 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
     });
   };
 
-  // Count fillable fields
+  // Count: DB fields + voice fields that can be filled
   const autoFillCount = (form.fields || []).filter(f => {
-    const v = getProfileValue(f);
+    const v = getProfileValue(f) || getVoiceValue(f);
     return v && String(v).trim();
   }).length;
 
@@ -274,12 +303,19 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
   };
 
   // ── SUBMIT ────────────────────────────────────────────────────────────────
+  const [autoApproved,    setAutoApproved]    = useState(false);
+  const [autoApproveMsg,  setAutoApproveMsg]  = useState("");
+
   const handleSubmit = async () => {
     setSubmitting(true);
     setError("");
     try {
-      const saved = await submitApplicationAPI(form._id, formData, remarks, files);
+      const saved = await submitApplicationAPI(form._id, formData, remarks, files, priority);
       setSubmittedId(saved.appId);
+      if (saved.autoApproved) {
+        setAutoApproved(true);
+        setAutoApproveMsg(saved.autoApproveReason || "Auto-approved by system");
+      }
     } catch (err) {
       setError(err.message || "Submission failed. Is the backend running?");
     } finally {
@@ -293,8 +329,27 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",
         padding:"60px 20px",background:"white",borderRadius:20,boxShadow:"0 2px 16px rgba(0,0,0,0.08)"}}>
         <div style={{fontSize:72,marginBottom:16}}>🎉</div>
-        <h2 style={{fontSize:24,fontWeight:800,marginBottom:6}}>Application Submitted!</h2>
+        <h2 style={{fontSize:24,fontWeight:800,marginBottom:6}}>
+          {autoApproved ? "🎉 Auto-Approved!" : "Application Submitted!"}
+        </h2>
         <p style={{color:"#8898aa",marginBottom:12,fontSize:14}}>{form.name}</p>
+
+        {/* Feature 1: Auto-Decision Banner */}
+        {autoApproved && (
+          <div style={{background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",
+            border:"2px solid #059669",borderRadius:14,padding:"16px 24px",
+            marginBottom:16,width:"100%",maxWidth:420,textAlign:"center"}}>
+            <div style={{fontSize:28,marginBottom:6}}>✅</div>
+            <div style={{fontSize:15,fontWeight:800,color:"#059669",marginBottom:4}}>
+              Automatically Approved!
+            </div>
+            <div style={{fontSize:12,color:"#166534"}}>{autoApproveMsg}</div>
+            <div style={{fontSize:11,color:"#15803d",marginTop:6}}>
+              No manual review needed — you can proceed immediately
+            </div>
+          </div>
+        )}
+
         <div style={{background:accentColor+"15",border:`2px solid ${accentColor}`,borderRadius:12,
           padding:"12px 32px",marginBottom:24}}>
           <span style={{color:accentColor,fontWeight:800,fontSize:22}}>{submittedId}</span>
@@ -302,17 +357,21 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
         <div style={{background:"#f0fdf4",borderRadius:12,padding:"14px 20px",
           marginBottom:16,width:"100%",maxWidth:420,textAlign:"left"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#166534",marginBottom:10}}>
-            ✅ Saved to database. Approval chain:
+            {autoApproved ? "✅ All steps approved automatically:" : "✅ Saved to database. Approval chain:"}
           </div>
           {(form.signatories||[]).map((s,i) => (
             <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
               <div style={{width:22,height:22,borderRadius:"50%",flexShrink:0,
-                background:i===0?"#059669":"#e8e4dc",
-                color:i===0?"white":"#8898aa",
+                background:autoApproved?"#059669":i===0?"#059669":"#e8e4dc",
+                color:autoApproved||i===0?"white":"#8898aa",
                 display:"flex",alignItems:"center",justifyContent:"center",
-                fontSize:10,fontWeight:700}}>{i+1}</div>
-              <span style={{fontSize:13,color:i===0?"#059669":"#8898aa",fontWeight:i===0?700:400}}>
-                {s} {i===0?"← Reviewing now":""}
+                fontSize:10,fontWeight:700}}>
+                {autoApproved?"✓":i+1}
+              </div>
+              <span style={{fontSize:13,
+                color:autoApproved?"#059669":i===0?"#059669":"#8898aa",
+                fontWeight:autoApproved||i===0?700:400}}>
+                {s} {autoApproved?" ← Auto-Approved":i===0?"← Reviewing now":""}
               </span>
             </div>
           ))}
@@ -392,12 +451,29 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
                     onMouseOver={e=>e.currentTarget.style.transform="scale(1.04)"}
                     onMouseOut={e=>e.currentTarget.style.transform="scale(1)"}
                   >
-                    ⚡ Auto-Fill ({autoFillCount} fields)
+                    ⚡ Auto-Fill ({autoFillCount} fields
+                    {voiceFields.length > 0 ? ` · ${voiceFields.length} from voice` : " from profile"})
                   </button>
                 )}
 
-                {/* Already filled badge */}
-                {autoFillDone && (
+                {/* Re-fill button when voice has new data after first autofill */}
+                {autoFillDone && voiceFields.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleAutoFill}
+                    style={{
+                      display:"flex", alignItems:"center", gap:6,
+                      padding:"6px 14px", borderRadius:99,
+                      background:"#eff6ff", border:"1.5px solid #2563eb",
+                      color:"#2563eb", cursor:"pointer",
+                      fontSize:11, fontWeight:800, transition:"all 0.15s",
+                    }}>
+                    🔄 Re-fill with Voice
+                  </button>
+                )}
+
+                {/* Already filled badge (show only when no new voice data) */}
+                {autoFillDone && voiceFields.length === 0 && (
                   <div style={{display:"flex", alignItems:"center", gap:6,
                     background:"#f0fdf4", border:"1.5px solid #bbf7d0",
                     borderRadius:99, padding:"5px 12px"}}>
@@ -428,13 +504,30 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
                   <span style={{fontSize:18}}>✅</span>
                   <div>
                     <div style={{fontWeight:800, fontSize:13, color:"#166534", marginBottom:3}}>
-                      Profile data auto-filled!
+                      {voiceFields.length > 0 ? "Profile + Voice data filled!" : "Profile data auto-filled!"}
                     </div>
                     <div style={{fontSize:12, color:"#15803d"}}>
-                      <strong style={{color:"#059669"}}>{autoFilledFields.join(", ")}</strong> — filled from your profile.
-                      {requiredFields.length - autoFilledFields.length > 0
-                        ? ` Please fill the remaining ${requiredFields.length - autoFilledFields.length} field(s) manually.`
-                        : " All fields are filled — ready to continue!"}
+                      {/* DB filled fields */}
+                      {autoFilledFields.filter(f => !voiceFields.includes(f)).length > 0 && (
+                        <div>
+                          🗄️ <strong style={{color:"#059669"}}>
+                            {autoFilledFields.filter(f => !voiceFields.includes(f)).join(", ")}
+                          </strong> — from your profile (database)
+                        </div>
+                      )}
+                      {/* Voice filled fields */}
+                      {voiceFields.length > 0 && (
+                        <div style={{marginTop:3}}>
+                          🎙️ <strong style={{color:"#2563eb"}}>
+                            {voiceFields.join(", ")}
+                          </strong> — from your voice input
+                        </div>
+                      )}
+                      <div style={{marginTop:4, color:"#4a5568"}}>
+                        {getEmptyFields().length > 0
+                          ? `${getEmptyFields().length} field(s) still need manual input.`
+                          : "🎉 All fields filled — ready to continue!"}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -475,28 +568,102 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
                           </span>
                         )}
                       </label>
-                      <input
-                        value={formData[field]||""}
-                        onChange={e => handleFieldChange(field, e.target.value)}
-                        placeholder={"Enter " + field.toLowerCase()}
-                        style={{width:"100%",padding:"10px 12px",boxSizing:"border-box",
-                          fontSize:13,borderRadius:8,outline:"none",transition:"border-color 0.15s",
-                          border: hasError
-                            ? "2px solid #dc2626"
-                            : isAutoFilled
-                              ? "1.5px solid #059669"
-                              : "1.5px solid #e2e8f0",
-                          background: hasError    ? "#fef2f2"
-                                    : isAutoFilled ? "#f0fdf4"
-                                    : "white"}}
-                        onFocus={e  => { if(!hasError) e.target.style.borderColor=isAutoFilled?"#059669":accentColor; }}
-                        onBlur={e   => { if(!hasError) e.target.style.borderColor=isAutoFilled?"#059669":"#e2e8f0"; }}
-                      />
-                      {hasError && (
-                        <div style={{fontSize:11,color:"#dc2626",marginTop:4,fontWeight:600}}>
-                          ⚠ {field} is required
-                        </div>
-                      )}
+                                            {/* Smart input based on field name */}
+                      {(() => {
+                        const fl = field.toLowerCase();
+                        const isPhone  = fl.includes("phone") || fl.includes("contact") || fl.includes("mobile") || fl.includes("whatsapp");
+                        const isDate   = fl.includes("date") || fl === "from" || fl === "to" || fl.includes("from date") || fl.includes("to date") || fl.includes("dob");
+                        const isNumber = (fl.includes("year") && !fl.includes("academic")) || fl.includes("marks") || fl.includes("percentage") || fl.includes("cgpa") || fl.includes("count") || fl.includes("copies") || fl.includes("amount");
+                        const borderStyle = {
+                          border: hasError ? "2px solid #dc2626" : isAutoFilled ? "1.5px solid #059669" : "1.5px solid #e2e8f0",
+                          background: hasError ? "#fef2f2" : isAutoFilled ? "#f0fdf4" : "white",
+                        };
+                        const commonStyle = { width:"100%", padding:"10px 12px", boxSizing:"border-box", fontSize:13, borderRadius:8, outline:"none", transition:"border-color 0.15s", ...borderStyle };
+                        const focusFn = (e) => { if(!hasError) e.target.style.borderColor = isAutoFilled?"#059669":accentColor; };
+                        const blurFn  = (e) => { if(!hasError) e.target.style.borderColor = isAutoFilled?"#059669":"#e2e8f0"; };
+
+                        // PHONE — numbers only, max 10 digits with counter
+                        if (isPhone) {
+                          const phoneVal = formData[field]||"";
+                          const count = phoneVal.replace(/\D/g,"").length;
+                          return (
+                            <div style={{position:"relative"}}>
+                              <input
+                                type="tel"
+                                value={phoneVal}
+                                onChange={e => {
+                                  const val = e.target.value.replace(/\D/g,"").slice(0,10);
+                                  handleFieldChange(field, val);
+                                }}
+                                onKeyDown={e => {
+                                  const allowed = ["Backspace","Delete","Tab","ArrowLeft","ArrowRight","Home","End"];
+                                  if (!allowed.includes(e.key) && !/^[0-9]$/.test(e.key)) e.preventDefault();
+                                }}
+                                placeholder="Enter 10-digit number (digits only)"
+                                maxLength={10}
+                                inputMode="numeric"
+                                style={{...commonStyle, paddingRight:55}}
+                                onFocus={focusFn} onBlur={blurFn}
+                              />
+                              <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",
+                                fontSize:11,fontWeight:700,
+                                color:count===10?"#059669":count>0?"#f59e0b":"#aaa"}}>
+                                {count}/10
+                              </span>
+                            </div>
+                          );
+                        }
+
+                        // DATE — calendar picker only, no manual text
+                        if (isDate) {
+                          const toISO = (v) => {
+                            if (!v) return "";
+                            if (v.includes("-") && v.length === 10) return v;
+                            const p = v.split("/");
+                            if (p.length === 3) return `${p[2]}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`;
+                            return "";
+                          };
+                          return (
+                            <div style={{position:"relative"}}>
+                              <input
+                                type="date"
+                                value={toISO(formData[field]||"")}
+                                onChange={e => {
+                                  const d = e.target.value;
+                                  if (d) {
+                                    const [y,m,day] = d.split("-");
+                                    handleFieldChange(field, `${day}/${m}/${y}`);
+                                  } else handleFieldChange(field,"");
+                                }}
+                                onKeyDown={e => {
+                                  if (!["Tab","ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Enter","Escape","F4","Delete","Backspace"].includes(e.key))
+                                    e.preventDefault();
+                                }}
+                                style={{...commonStyle, cursor:"pointer"}}
+                                onFocus={focusFn} onBlur={blurFn}
+                              />
+                              <span style={{position:"absolute",right:34,top:"50%",transform:"translateY(-50%)",
+                                fontSize:10,color:"#8898aa",pointerEvents:"none"}}>📅</span>
+                            </div>
+                          );
+                        }
+
+                        // NUMBER
+                        if (isNumber) return (
+                          <input type="number" value={formData[field]||""} min={0}
+                            onChange={e => handleFieldChange(field, e.target.value)}
+                            placeholder={"Enter " + field.toLowerCase()}
+                            style={commonStyle} onFocus={focusFn} onBlur={blurFn}/>
+                        );
+
+                        // Default text
+                        return (
+                          <input value={formData[field]||""}
+                            onChange={e => handleFieldChange(field, e.target.value)}
+                            placeholder={"Enter " + field.toLowerCase()}
+                            style={commonStyle} onFocus={focusFn} onBlur={blurFn}/>
+                        );
+                      })()}
                     </div>
                   );
                 })}
@@ -655,6 +822,95 @@ function FormWizard({ form, onBack, onNavigate, accentColor = "#e85d26", isFacul
           {/* AI Predictive widget */}
           <PredictiveWidget form={form}/>
 
+          {/* Feature 3: Priority-Based Routing */}
+          {step===1 && (
+            <div style={{background:"white",borderRadius:14,padding:18,boxShadow:"0 2px 12px rgba(0,0,0,0.06)",border:"1px solid #f0ebe3"}}>
+              <div style={{fontSize:12,fontWeight:800,color:"#4a5568",textTransform:"uppercase",letterSpacing:0.3,marginBottom:10}}>
+                🎯 Request Priority
+              </div>
+              <div style={{fontSize:11,color:"#8898aa",marginBottom:10}}>
+                High priority routes directly to HOD, skipping standard wait time
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                {[
+                  {v:"low",    l:"Low",    c:"#059669", bg:"#f0fdf4"},
+                  {v:"medium", l:"Normal", c:"#f59e0b", bg:"#fffbeb"},
+                  {v:"high",   l:"Urgent", c:"#dc2626", bg:"#fef2f2"},
+                ].map(p=>(
+                  <button key={p.v} type="button" onClick={()=>setPriority(p.v)}
+                    style={{flex:1,padding:"7px 4px",borderRadius:8,fontWeight:700,
+                      fontSize:11,cursor:"pointer",border:"1.5px solid",
+                      background:priority===p.v?p.c:"white",
+                      color:priority===p.v?"white":p.c,
+                      borderColor:p.c,transition:"all 0.15s"}}>
+                    {p.l}
+                  </button>
+                ))}
+              </div>
+              {priority==="high" && (
+                <div style={{marginTop:8,fontSize:11,color:"#dc2626",fontWeight:600,
+                  background:"#fef2f2",borderRadius:6,padding:"5px 8px"}}>
+                  ⚡ Urgent — will be routed directly to HOD for faster approval
+                </div>
+              )}
+              {priority==="low" && (
+                <div style={{marginTop:8,fontSize:11,color:"#059669",fontWeight:600,
+                  background:"#f0fdf4",borderRadius:6,padding:"5px 8px"}}>
+                  ✓ Standard processing — some requests auto-approve
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Feature 6: Voice Form Fill */}
+          {step===1 && (
+            <VoiceFormFill
+              fields={requiredFields}
+              accentColor={accentColor}
+              onFill={(extracted)=>{
+                // extracted = { "From Date":"10/04/2026", "Reason":"fever", ... }
+                const newVoiceData = {};
+                const newVoiceFields = [];
+
+                // Direct fill — voice extractor already matched to form fields
+                Object.entries(extracted).forEach(([fieldName, value]) => {
+                  if (value && requiredFields.includes(fieldName)) {
+                    newVoiceData[fieldName]  = String(value);
+                    newVoiceFields.push(fieldName);
+                  }
+                });
+
+                // Also try fuzzy match for any remaining
+                requiredFields.forEach(field => {
+                  if (newVoiceData[field]) return; // already filled
+                  const fl = field.toLowerCase();
+                  Object.entries(extracted).forEach(([k, v]) => {
+                    if (!v) return;
+                    const kl = k.toLowerCase();
+                    if (fl === kl || fl.includes(kl) || kl.includes(fl.split(" ")[0])) {
+                      newVoiceData[field]  = String(v);
+                      if (!newVoiceFields.includes(field)) newVoiceFields.push(field);
+                    }
+                  });
+                });
+
+                if (newVoiceFields.length > 0) {
+                  setVoiceData(prev => ({ ...prev, ...newVoiceData }));
+                  setVoiceFields(prev => [...new Set([...prev, ...newVoiceFields])]);
+                  // Immediately fill form fields
+                  setFormData(prev => ({ ...prev, ...newVoiceData }));
+                  setAutoFilledFields(prev => [...new Set([...prev, ...newVoiceFields])]);
+                  setAutoFillDone(true);
+                  setFieldErrors(prev => {
+                    const n = {...prev};
+                    newVoiceFields.forEach(k => delete n[k]);
+                    return n;
+                  });
+                }
+              }}
+            />
+          )}
+
           {/* Required fields checklist — live feedback */}
           {step===1 && requiredFields.length > 0 && (
             <div style={{background:"white",borderRadius:14,padding:18,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
@@ -725,20 +981,29 @@ export default function BrowseForms({ onNavigate = () => {} }) {
         const stored = sessionStorage.getItem("ai_prefill");
         if (stored) {
           try {
-            const parsed = JSON.parse(stored);
-            const targetName = parsed.formName?.toLowerCase();
+            const parsed     = JSON.parse(stored);
+            const targetName = (parsed.formName || "").toLowerCase().trim();
             if (targetName) {
-              // Find best matching form
-              const match = list.find(f =>
-                f.name?.toLowerCase() === targetName ||                          // exact
-                f.name?.toLowerCase().includes(targetName) ||                   // form name contains target
-                targetName.includes(f.name?.toLowerCase().split(" ")[0])        // target contains first word
-              );
+              // Level 1: exact match
+              let match = list.find(f => f.name?.toLowerCase().trim() === targetName);
+              // Level 2: form name starts with target
+              if (!match) match = list.find(f => f.name?.toLowerCase().trim().startsWith(targetName));
+              // Level 3: target starts with form name
+              if (!match) match = list.find(f => targetName.startsWith(f.name?.toLowerCase().trim()));
+              // Level 4: form name includes target
+              if (!match) match = list.find(f => f.name?.toLowerCase().includes(targetName));
+              // Level 5: target includes form name
+              if (!match) match = list.find(f => targetName.includes(f.name?.toLowerCase()));
+              // Level 6: first two words of form name match
+              if (!match) match = list.find(f => {
+                const words = f.name?.toLowerCase().split(" ").slice(0,2).join(" ");
+                return targetName.includes(words) || words.includes(targetName.split(" ").slice(0,2).join(" "));
+              });
+
               if (match) {
-                // Don't remove from sessionStorage yet — FormWizard will read it
+                // Keep in sessionStorage — FormWizard reads it for pre-fill
                 setSelected(match);
               } else {
-                // No exact form found — set search so user can see related forms
                 setSearch(parsed.formName || "");
               }
             }

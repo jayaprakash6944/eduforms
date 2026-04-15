@@ -4,9 +4,9 @@ export const PORTALS = [
   { role:"mentor",             label:"Mentor",              tagline:"Review & approve student applications",       icon:"🧑‍💼", color:"#2563eb", bg:"#eff6ff", border:"#bfdbfe", desc:"First-level approvals for assigned students across all form types",  canRegister:true  },
   { role:"hod",                label:"Head of Department",  tagline:"Department-level approvals & reports",       icon:"🏛️", color:"#7c3aed", bg:"#f5f3ff", border:"#ddd6fe", desc:"Approve department applications, view reports and student tracker",  canRegister:true  },
   { role:"exam_branch",        label:"Exam Branch",         tagline:"Manage all exam-related requests",           icon:"📝", color:"#dc2626", bg:"#fef2f2", border:"#fecaca", desc:"Revaluation, transcripts, hall tickets, mark corrections & more",    canRegister:true  },
-  { role:"college_admin",      label:"College Admin",       tagline:"Manage forms, users & analytics",            icon:"⚙️", color:"#374151", bg:"#f9fafb", border:"#d1d5db", desc:"Full control: form templates, user management, all applications",    canRegister:false },
-  { role:"placement_director", label:"Placement Director",  tagline:"Manage placement documents",                 icon:"💼", color:"#f59e0b", bg:"#fffbeb", border:"#fde68a", desc:"Internship NOC, placement registration, industrial visit approvals",  canRegister:false },
-  { role:"college_director",   label:"College Director",    tagline:"Final authority — all approvals",            icon:"👔", color:"#0d1b2a", bg:"#f1f5f9", border:"#cbd5e1", desc:"Final sign-off on all escalated applications from every department",  canRegister:false },
+  { role:"college_admin",      label:"College Admin",       tagline:"Manage forms, users & analytics",            icon:"⚙️", color:"#374151", bg:"#f9fafb", border:"#d1d5db", desc:"Full control: form templates, user management, all applications",    canRegister:true  },
+  { role:"placement_director", label:"Placement Director",  tagline:"Manage placement documents",                 icon:"💼", color:"#f59e0b", bg:"#fffbeb", border:"#fde68a", desc:"Internship NOC, placement registration, industrial visit approvals",  canRegister:true  },
+  { role:"college_director",   label:"College Director",    tagline:"Final authority — all approvals",            icon:"👔", color:"#0d1b2a", bg:"#f1f5f9", border:"#cbd5e1", desc:"Final sign-off on all escalated applications from every department",  canRegister:true  },
 ];
 
 export default function PortalPage({ onSelectPortal }) {
